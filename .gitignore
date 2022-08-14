@@ -10,5 +10,3 @@ static/
 media/
 
 .env
-my.cnf
-*.sqlite*
