@@ -1,4 +1,5 @@
 import asyncio
+from functools import wraps
 from dotenv import dotenv_values
 
 from telegram import (
@@ -18,18 +19,34 @@ from game import Roshambo, FIGURES_LIST
 config = dotenv_values(".env")
 
 
+def delay(class_method):
+    """Block handler until previuos event is processed,
+    to avoid race conditions
+    """
+    DELAY = 500
+    @wraps(class_method)
+    async def wrapper(*args, **kwargs):
+        result = await class_method(*args, **kwargs)
+        await asyncio.sleep(DELAY / 1000)
+        return result
+    return wrapper
+
+
 class RoshamboMixin:
-    DELAY = 300  # ms
+    DELAY = 500  # ms
     NEXT_MOVE, GAME_OVER = range(2)  # conversation state codes
     ROUNDS = range(1, 6)
-    query = None
+    CANCEL: int = -1
+    CONVERSATIONS = {}
 
-    @staticmethod
-    def options_list_buttons_markup(list_):
+    def get_cancel_keyboard(self):
+        return [InlineKeyboardButton("Отмена", callback_data=self.CANCEL)]
+
+    def options_list_buttons_markup(self, list_, cancel=True):
         reply_keyboard = [InlineKeyboardButton(
             value, callback_data=key
         ) for key, value in enumerate(list_)]
-        cancel_keyboard = [InlineKeyboardButton("Отмена", callback_data=-1)]
+        cancel_keyboard = self.get_cancel_keyboard() if cancel else []
         return InlineKeyboardMarkup([reply_keyboard, cancel_keyboard])
 
     @staticmethod
@@ -62,6 +79,7 @@ class RoshamboMixin:
     def get_cancel_text():
         return "Игра прервана.\n/start, чтоб начать заново"
 
+    @delay
     async def start(self, update: Updater, context: CallbackContext) -> int:
         user = update.effective_user
         user_name = user.first_name
@@ -72,18 +90,21 @@ class RoshamboMixin:
         self.game = None
         return self.NEXT_MOVE
 
+    @delay
     async def next_move(self, update: Update, context: CallbackContext) -> int:
-        self.query = update.callback_query
-        await self.query.answer()
-        data = int(self.query.data)
-        if data == -1:
+        query = update.callback_query
+        await query.answer()
+        data = int(query.data)
+        if data == self.CANCEL:
             return await self.cancel(update, context)
         move = None
         if self.game:
             move = data
-            move = FIGURES_LIST[move]
-            self.game.next_move(move)
-            await asyncio.sleep(self.DELAY / 1000)
+            try:
+                move = FIGURES_LIST[move]
+                self.game.next_move(move)
+            except IndexError:
+                pass
         else:
             rounds = data + 1
             self.game = Roshambo(rounds)
@@ -91,7 +112,7 @@ class RoshamboMixin:
             return self.GAME_OVER
         reply_markup = self.options_list_buttons_markup(FIGURES_LIST)
         try:
-            await self.query.edit_message_text(
+            await query.edit_message_text(
                 text=self.get_tableau(),
                 reply_markup=reply_markup,
             )
@@ -100,19 +121,18 @@ class RoshamboMixin:
         return self.NEXT_MOVE
 
     async def game_over(self, update: Update, context: CallbackContext) -> int:
-        await self.query.answer()
-        await self.query.edit_message_text(
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
             text=self.get_game_over(),
         )
-        self.query = None
         return ConversationHandler.END
 
     async def cancel(self, update: Updater, context: CallbackContext) -> int:
-        query = self.query or update.callback_query
+        query = update.callback_query
         if query:
             await query.edit_message_text(
                 text=self.get_cancel_text())
-            self.query = None
         else:
             await update.message.reply_text(
                 text=self.get_cancel_text()
@@ -128,6 +148,7 @@ class RoshamboMixin:
                     self.GAME_OVER: [CallbackQueryHandler(self.game_over)],
                 },
                 fallbacks=[CommandHandler('cancel', self.cancel)],
+                conversation_timeout=60,
                 # allow_reentry=True,
             ),
             *super().get_handlers()
