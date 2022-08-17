@@ -4,6 +4,8 @@
 
 Makes use of [`python-telegram-bot`](https://docs.python-telegram-bot.org/en/v20.0a2/index.html), with its pre-release *ApplicationBuilder* class.
 
+[`Sample bot`](https://t.me/RochambeauBot)
+
 Installation and usage:
 -
 - create a Telegram bot following these [instructions](https://core.telegram.org/bots#3-how-do-i-create-a-bot);
