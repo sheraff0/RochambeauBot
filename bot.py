@@ -37,7 +37,7 @@ class RoshamboMixin:
     NEXT_MOVE, GAME_OVER = range(2)  # conversation state codes
     ROUNDS = range(1, 6)
     CANCEL: int = -1
-    CONVERSATIONS = {}
+    CONVERSATION_TIMEOUT = 60
 
     def get_cancel_keyboard(self):
         return [InlineKeyboardButton("Отмена", callback_data=self.CANCEL)]
@@ -146,9 +146,10 @@ class RoshamboMixin:
                 states={
                     self.NEXT_MOVE: [CallbackQueryHandler(self.next_move)],
                     self.GAME_OVER: [CallbackQueryHandler(self.game_over)],
+                    ConversationHandler.TIMEOUT: [CallbackQueryHandler(self.cancel)],
                 },
                 fallbacks=[CommandHandler('cancel', self.cancel)],
-                conversation_timeout=60,
+                conversation_timeout=self.CONVERSATION_TIMEOUT,
                 # allow_reentry=True,
             ),
             *super().get_handlers()
